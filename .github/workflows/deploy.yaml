@@ -1,0 +1,50 @@
+name: Deploy (manual Helm)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag (commit SHA) to deploy'
+        required: true
+        type: string
+      namespace:
+        description: 'Kubernetes namespace'
+        required: false
+        default: 'iris'
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/iris-api
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write kubeconfig from secret
+        shell: bash
+        run: |
+          echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Helm upgrade/install
+        shell: bash
+        run: |
+          NAMESPACE="${{ inputs.namespace }}"
+          helm upgrade --install iris-api ./helm/iris-api \
+            -n "$NAMESPACE" --create-namespace \
+            --set image.repository="$IMAGE_REPO" \
+            --set image.tag="${{ inputs.image_tag }}"

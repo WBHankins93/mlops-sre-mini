@@ -1,0 +1,49 @@
+name: Build & Push (GHCR)
+
+on:
+  workflow_run:
+    workflows: ["Train"]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/iris-api
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout (same commit as Train)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - name: Download model artifact from Train
+        uses: actions/download-artifact@v4
+        with:
+          name: model
+          path: .
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image (bake model.pkl)
+        run: |
+          docker build \
+            --build-arg MODEL_FILE=model.pkl \
+            -t $IMAGE_REPO:${SHA} \
+            .
+
+      - name: Push image
+        run: |
+          docker push $IMAGE_REPO:${SHA}
